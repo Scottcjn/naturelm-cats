@@ -31,6 +31,19 @@ GPT-OSS-20B Q4_K_M (RTX 4070, llama-server :9002)
   → structured behavioral analysis with confidence calibration
 ```
 
+### Bridge variants
+
+| Script | Inputs to GPT-OSS-20B | When to use |
+|---|---|---|
+| `scripts/bridge_caption.py` | NatureLM caption (single generic query) | Simplest. Pre-classifier baseline. |
+| `scripts/bridge_with_context.py` | Caption + cat-context classifier probs | Default. 82.2% CV classifier grounding. |
+| **`scripts/bridge_multiquery.py`** | **3 NatureLM queries (acoustic / emotion / sentence) + classifier** | **Richest. GPT-OSS-20B can flag caption-classifier disagreements.** |
+
+The multi-query bridge runs NatureLM three times per clip (~3× the audio inference cost, ~15s warm) but gives GPT-OSS-20B enough independent signals to reason about *which* caption to trust when they disagree. Probe results in `scripts/probe_naturelm_queries.py` showed:
+
+- **Acoustic-characteristics** is the most informative query — distinct per-clip outputs (pitch, rhythm, duration, intensity).
+- **Emotion** and **if-a-sentence** queries are partially noisy — NatureLM has default-y outputs ("Distressed", "I want to be petted") that surface inconsistently across clips. The multi-query bridge still uses them because *when they engage*, they add a useful independent signal, and GPT-OSS-20B correctly weighs them against the classifier (committing when classifier is confident, flagging the noise when it isn't).
+
 ### Sample output (ESC-50 cat clip)
 
 > *Generic caption:* `"Domestic cats vocalizing."`
@@ -143,8 +156,17 @@ Run the bridge against any cat audio (terminal 2):
 # Caption-only bridge (no trained classifier)
 CUDA_VISIBLE_DEVICES="" uv run python scripts/bridge_caption.py path/to/cat.wav
 
-# Full bridge with trained context classifier
+# Bridge v2: classifier-grounded reasoning (default)
 CUDA_VISIBLE_DEVICES="" uv run python scripts/bridge_with_context.py path/to/cat.wav
+
+# Bridge v3: multi-query — runs 3 NatureLM queries, flags disagreements
+CUDA_VISIBLE_DEVICES="" uv run python scripts/bridge_multiquery.py path/to/cat.wav
+
+# Batch over many clips at once (writes /tmp/cat_batch_{results.jsonl,report.md})
+CUDA_VISIBLE_DEVICES="" uv run python scripts/batch_bridge.py --source mixed --n-each 5
+
+# Probe which NatureLM queries produce informative captions
+CUDA_VISIBLE_DEVICES="" uv run python scripts/probe_naturelm_queries.py
 ```
 
 `CUDA_VISIBLE_DEVICES=""` forces NatureLM-audio to CPU so it doesn't fight llama-server for VRAM. ~60s cold start (Llama-3.1-8B loads into 16 GB of system RAM), <10s warm.
@@ -203,7 +225,10 @@ uv run python scripts/cross_validate_augmented.py
 ```
 scripts/
 ├── bridge_caption.py                    v1 bridge: NatureLM caption → GPT-OSS-20B
-├── bridge_with_context.py               v2 bridge: + hybrid cat-context classifier (82.2% CV)
+├── bridge_with_context.py               v2 bridge: + hybrid classifier (82.2% CV)
+├── bridge_multiquery.py                 v3 bridge: 3 NatureLM queries + classifier
+├── batch_bridge.py                      batch-process many clips, save JSONL + Markdown
+├── probe_naturelm_queries.py            evaluate which NatureLM queries are informative
 ├── extract_beats_features.py            BEATs mean-pool features (baseline)
 ├── extract_beats_stats_features.py      BEATs mean+std+max stats features
 ├── extract_classical_features.py        102-dim MFCC+spectral+ZCR+RMS via librosa

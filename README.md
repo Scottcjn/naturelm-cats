@@ -228,7 +228,9 @@ scripts/
 ├── bridge_with_context.py               v2 bridge: + hybrid classifier (82.2% CV)
 ├── bridge_multiquery.py                 v3 bridge: 3 NatureLM queries + classifier
 ├── batch_bridge.py                      batch-process many clips, save JSONL + Markdown
+├── batch_bridge_multiquery.py           batch-process clips with v3 multi-query
 ├── probe_naturelm_queries.py            evaluate which NatureLM queries are informative
+├── sara_recorder.py                     interactive per-cat corpus collection (turn-taking aware)
 ├── extract_beats_features.py            BEATs mean-pool features (baseline)
 ├── extract_beats_stats_features.py      BEATs mean+std+max stats features
 ├── extract_classical_features.py        102-dim MFCC+spectral+ZCR+RMS via librosa
@@ -261,8 +263,27 @@ If you want commercial use of the trained cat classifier, contact Earth Species 
 
 - **3 contexts only** (brushing / isolation / waiting-for-food). Real cats produce many more vocalization types; the classifier will force-fit out-of-distribution audio into one of these three. Use the softmax confidence as your uncertainty signal.
 - **82.2% CV accuracy** (hybrid BEATs+classical) vs Ludovico et al. 2020's 86% — within 4 points. Off-the-shelf data augmentation hurt rather than helped. Closing the remaining gap likely needs (a) more data, (b) per-cat personalization, or (c) a learned attention pool over BEATs time-steps instead of statistical pooling.
-- **No per-cat personalization**: the classifier was trained on 21 cats from CatMeows. Individual cats have idiosyncratic dialects; a per-cat embedding or fine-tuning on a few labeled clips of your specific cat would help substantially.
+- **No per-cat personalization (yet)**: the classifier was trained on 21 cats from CatMeows. Individual cats have idiosyncratic dialects; a per-cat embedding or fine-tuning on a few labeled clips of your specific cat would help substantially. **`scripts/sara_recorder.py` builds a per-cat corpus toward this** — interactive recording + Scott's contextual labels (what was happening, interpretation, turn-taking flag). Saved to `~/sara-corpus/`.
 - **No reverse direction**: we listen to the cat, we don't generate audio the cat would recognize. Cat-directed speech synthesis is a separate, harder problem.
+
+## Building a per-cat corpus
+
+For the *actual* research question — does a specific cat have a personal repertoire and turn-taking exchanges with their human? — the path is observing one cat closely over time, not more accuracy on a 21-cat dataset.
+
+```bash
+# List input devices (pick one if not using system default)
+uv run python scripts/sara_recorder.py --list-devices
+
+# Record interactively (ENTER to start/stop), prompts for context labels
+uv run python scripts/sara_recorder.py
+
+# Specify cat name and input device
+uv run python scripts/sara_recorder.py --cat Sara --device 6
+```
+
+Saves `~/sara-corpus/{ISO-timestamp}/audio.wav` + `meta.json` per clip. The metadata captures both context (what was happening, your interpretation) and **turn-taking structure** (was this an exchange? when did *you* acknowledge? did she follow up?) — because turn-taking patterns are the empirically important structural signal that pure single-clip classification misses entirely.
+
+Once a corpus exists, the natural follow-on analyses are: (a) BEATs feature clustering of the recorded clips to see if observed contexts form acoustic clusters, (b) comparing turn-taking-exchange clips to non-exchange clips, (c) re-training the classifier with per-cat data added.
 
 ---
 
